@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App - WebSocket + REST API</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .section { padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+        .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .messages { height: 300px; border: 1px solid #ccc; padding: 10px; overflow-y: auto; margin-bottom: 10px; background: #f9f9f9; }
+        .message { margin: 5px 0; padding: 8px; background: white; border-radius: 4px; border-left: 4px solid #007bff; }
+        .users-list { height: 150px; border: 1px solid #ccc; padding: 10px; overflow-y: auto; background: #f9f9f9; }
+        .log { background: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; }
+        input, button { padding: 8px 12px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; }
+        .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .stat-card { background: #e9ecef; padding: 10px; border-radius: 4px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Chat Application - WebSocket + REST API</h1>
+        
+        <!-- Statistics Dashboard -->
+        <div class="stats" id="stats">
+            <div class="stat-card">Users: <span id="totalUsers">0</span></div>
+            <div class="stat-card">Online: <span id="onlineUsers">0</span></div>
+            <div class="stat-card">Messages: <span id="totalMessages">0</span></div>
+        </div>
+
+        <div class="dashboard">
+            <!-- WebSocket Chat Section -->
+            <div class="section">
+                <h2>Real-time Chat (WebSocket)</h2>
+                <div id="status" class="status disconnected">Disconnected</div>
+                <div>
+                    <input type="text" id="username" placeholder="Your name" value="User">
+                    <button onclick="connectWebSocket()">Connect</button>
+                    <button onclick="disconnectWebSocket()">Disconnect</button>
+                </div>
+                <div id="messages" class="messages"></div>
+                <div>
+                    <input type="text" id="messageInput" placeholder="Type a message..." style="width: 70%;">
+                    <button onclick="sendMessage()" id="sendBtn" disabled>Send</button>
+                </div>
+            </div>
+
+            <!-- REST API Section -->
+            <div class="section">
+                <h2>User Management (REST API)</h2>
+                <div>
+                    <input type="text" id="newUsername" placeholder="Username" value="NewUser">
+                    <input type="email" id="newEmail" placeholder="Email" value="new@example.com">
+                    <button onclick="createUser()">Create User</button>
+                </div>
+                
+                <h3>Online Users</h3>
+                <div id="onlineUsersList" class="users-list"></div>
+                
+                <div style="margin-top: 10px;">
+                    <button onclick="loadUsers()">Load All Users</button>
+                    <button onclick="loadMessages()">Load Messages</button>
+                    <button onclick="loadSystemInfo()">System Info</button>
+                </div>
+                
+                <div id="apiResult" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; min-height: 50px;"></div>
+            </div>
+        </div>
+
+        <!-- Debug Log -->
+        <div class="section">
+            <h3>Debug Log</h3>
+            <div id="debugLog" class="log"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    
+    <script>
+        let stompClient = null;
+        let connected = false;
+
+        function log(msg) {
+            const logElement = document.getElementById('debugLog');
+            if (logElement) {
+                logElement.innerHTML += new Date().toLocaleTimeString() + ' - ' + msg + '<br>';
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+            console.log(msg);
+        }
+
+        // WebSocket functions
+        function connectWebSocket() {
+            log(' Connecting to WebSocket...');
+            const socket = new SockJS('http://localhost:8080/ws');
+            stompClient = Stomp.over(socket);
+            
+            stompClient.connect({},
+                function(frame) {
+                    log('WebSocket Connected!');
+                    connected = true;
+                    updateStatus('Connected', true);
+                    
+                    stompClient.subscribe('/topic/messages', function(message) {
+                        log(' Message received: ' + message.body);
+                        const msg = JSON.parse(message.body);
+                        displayMessage(msg.user + ': ' + msg.content + ' (' + msg.timestamp + ')');
+                    });
+                    
+                    document.getElementById('sendBtn').disabled = false;
+                    loadSystemInfo(); // Обновляем статистику при подключении
+                },
+                function(error) {
+                    log('WebSocket error: ' + error);
+                    updateStatus('Error', false);
+                }
+            );
+        }
+
+        function disconnectWebSocket() {
+            if (stompClient) stompClient.disconnect();
+            connected = false;
+            updateStatus('Disconnected', false);
+            document.getElementById('sendBtn').disabled = true;
+            log(' WebSocket disconnected');
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const username = document.getElementById('username').value || 'User';
+            const message = input.value;
+            
+            if (message && connected) {
+                log('Sending message: ' + message);
+                stompClient.send("/app/chat.send", {}, JSON.stringify({
+                    user: username,
+                    content: message
+                }));
+                input.value = '';
+            }
+        }
+
+        // REST API functions
+        async function createUser() {
+            const username = document.getElementById('newUsername').value;
+            const email = document.getElementById('newEmail').value;
+            
+            try {
+                log('Creating user via REST API...');
+                const response = await fetch('http://localhost:8080/api/users', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: username, email: email})
+                });
+                
+                const user = await response.json();
+                document.getElementById('apiResult').innerHTML = `
+                    <div style="color: green;">
+                        User created: ${user.username} (ID: ${user.id})
+                    </div>
+                `;
+                log('User created: ' + user.username);
+                loadSystemInfo(); // Обновляем статистику
+            } catch (error) {
+                document.getElementById('apiResult').innerHTML = `
+                    <div style="color: red;"> Error: ${error}</div>
+                `;
+                log(' User creation failed: ' + error);
+            }
+        }
+
+        async function loadUsers() {
+            try {
+                log(' Loading all users...');
+                const response = await fetch('http://localhost:8080/api/users');
+                const users = await response.json();
+                
+                let html = '<strong>All Users:</strong><br>';
+                users.forEach(user => {
+                    html += ` ${user.username} (${user.status || 'offline'})<br>`;
+                });
+                
+                document.getElementById('apiResult').innerHTML = html;
+                log(' Users loaded: ' + users.length + ' users');
+            } catch (error) {
+                document.getElementById('apiResult').innerHTML = `
+                    <div style="color: red;"> Error: ${error}</div>
+                `;
+                log(' Users load failed: ' + error);
+            }
+        }
+
+        async function loadOnlineUsers() {
+            try {
+                const response = await fetch('http://localhost:8080/api/users/online');
+                const users = await response.json();
+                
+                let html = '';
+                users.forEach(user => {
+                    html += ` ${user.username}<br>`;
+                });
+                
+                document.getElementById('onlineUsersList').innerHTML = html || 'No online users';
+            } catch (error) {
+                document.getElementById('onlineUsersList').innerHTML = 'Error loading online users';
+            }
+        }
+
+        async function loadMessages() {
+            try {
+                log(' Loading messages...');
+                const response = await fetch('http://localhost:8080/api/messages');
+                const messages = await response.json();
+                
+                let html = '<strong>Message History:</strong><br>';
+                messages.forEach(msg => {
+                    html += `${msg.username}: ${msg.content} (${msg.timestamp})<br>`;
+                });
+                
+                document.getElementById('apiResult').innerHTML = html;
+                log(' Messages loaded: ' + messages.length + ' messages');
+            } catch (error) {
+                document.getElementById('apiResult').innerHTML = `
+                    <div style="color: red;"> Error: ${error}</div>
+                `;
+                log(' Messages load failed: ' + error);
+            }
+        }
+
+        async function loadSystemInfo() {
+            try {
+                const response = await fetch('http://localhost:8080/api/info');
+                const info = await response.json();
+                
+                document.getElementById('totalUsers').textContent = info.totalUsers;
+                document.getElementById('onlineUsers').textContent = info.onlineUsers;
+                document.getElementById('totalMessages').textContent = info.totalMessages;
+                
+                loadOnlineUsers(); // Также загружаем онлайн пользователей
+            } catch (error) {
+                log(' System info load failed: ' + error);
+            }
+        }
+
+        function updateStatus(text, isConnected) {
+            const status = document.getElementById('status');
+            status.textContent = text;
+            status.className = 'status ' + (isConnected ? 'connected' : 'disconnected');
+        }
+
+        function displayMessage(text) {
+            const messages = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.textContent = text;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        // Event listeners
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Auto-load system info on page load
+        window.addEventListener('load', function() {
+            log(' App loaded. Ready to test WebSocket + REST API!');
+            loadSystemInfo();
+            setInterval(loadSystemInfo, 10000); // Обновляем каждые 10 секунд
+        });
+    </script>
+</body>
+</html>

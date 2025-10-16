@@ -1,0 +1,17 @@
+{
+  "name": "webapp-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "sockjs-client": "^1.6.1",
+    "webstomp-client": "^1.2.6"
+  },
+  "devDependencies": {
+    "vite": "^4.0.0"
+  }
+}
