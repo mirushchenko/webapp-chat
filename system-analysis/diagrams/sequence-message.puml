@@ -1,0 +1,19 @@
+@startuml
+title Sequence Diagram: Message Sending Process
+
+actor User as U
+participant "Web Client" as C
+participant "Chat Server" as S
+participant "Database" as DB
+participant "Receiver Client" as RC
+
+U -> C: Type message and click Send
+C -> S: HTTP POST /api/messages\n{from: user, to: receiver, text: "Hello"}
+S -> DB: INSERT INTO messages\nVALUES (from, to, text, timestamp)
+DB --> S: Success (message_id)
+S -> RC: WebSocket push\nnew_message event
+RC --> U: Display new message\nin chat interface
+S --> C: HTTP 200 OK\n{message_id, status: "delivered"}
+C --> U: Show "Delivered" status
+
+@enduml

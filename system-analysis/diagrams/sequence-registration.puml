@@ -1,0 +1,30 @@
+@startuml
+title Sequence Diagram: User Registration
+
+actor "New User" as U
+participant "Web Interface" as WI
+participant "Auth Service" as A
+participant "Database" as DB
+participant "Email Service" as E
+
+U -> WI: Fill registration form\n(email, password)
+
+alt Successful Registration
+    WI -> A: POST /api/register\n{email, password}
+    A -> DB: CHECK if email exists
+    DB --> A: Email not found
+    A -> DB: INSERT INTO users\n(email, password_hash)
+    DB --> A: User created (user_id)
+    A -> E: Send confirmation email
+    E --> U: Email with confirmation link
+    A --> WI: HTTP 201 Created\n{user_id, status: "pending"}
+    WI --> U: Show "Check your email" message
+else Email Already Exists
+    WI -> A: POST /api/register\n{email, password}
+    A -> DB: CHECK if email exists
+    DB --> A: Email already exists
+    A --> WI: HTTP 409 Conflict\n{error: "Email taken"}
+    WI --> U: Show error "Email already registered"
+end
+
+@enduml
