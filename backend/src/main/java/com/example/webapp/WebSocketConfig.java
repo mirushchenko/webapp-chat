@@ -16,7 +16,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         config.enableSimpleBroker("/topic");
         // Префикс для сообщений от клиентов к @MessageMapping методам
         config.setApplicationDestinationPrefixes("/app");
-        System.out.println("✅ WebSocket Broker: /topic (broker), /app (app prefix)");
+        System.out.println("WebSocket Broker: /topic (broker), /app (app prefix)");
     }
 
     @Override
@@ -25,6 +25,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
                 .withSockJS();
-        System.out.println("✅ WebSocket Endpoint: /ws (SockJS enabled)");
+        System.out.println("WebSocket Endpoint: /ws (SockJS enabled)");
     }
 }
